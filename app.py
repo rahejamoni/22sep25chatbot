@@ -1,64 +1,54 @@
-#app py hosting
 import streamlit as st
-from openai import OpenAI
+import pandas as pd
+import joblib
 
-# ==============================
-# App Title
-# ==============================
-st.title("🤖 Simple AI Chatbot")
+# ====================================
+# CONFIGURATION
+# ====================================
+MODEL_PATH = "bounce_model.pkl"
 
-# ==============================
-# Load OpenAI API Key from Secrets
-# ==============================
-openai_api_key = st.secrets.get("OPENAI_API_KEY")
-if not openai_api_key:
-    st.error("❌ Please add your OpenAI API key in Streamlit Secrets!")
-    st.stop()
+# Load trained model
+model = joblib.load(MODEL_PATH)
 
-client = OpenAI(api_key=openai_api_key)
+# ====================================
+# STREAMLIT FRONTEND
+# ====================================
+st.title("Bounce Prediction Risk Scoring App")
+st.write("Enter customer details to predict bounce risk score.")
 
-# ==============================
-# Initialize chat history
-# ==============================
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# Input fields
+cibil_score = st.number_input("CIBIL Score", min_value=300, max_value=900, value=700)
+no_of_unsecured_loan = st.number_input("Number of Unsecured Loans", min_value=0, max_value=20, value=2)
+no_of_total_trades = st.number_input("Number of Total Trades", min_value=1, max_value=50, value=5)
+avg_utilization_percent = st.number_input("Average Utilization Percentage", min_value=0, max_value=100, value=30)
+dpd_crossed_times = st.number_input("30+ DPD Crossed Times (Last 3 Months)", min_value=0, max_value=10, value=0)
 
-# ==============================
-# Chat input
-# ==============================
-user_input = st.text_input("Ask me anything:")
+# Predict button
+if st.button("Predict Risk Score"):
+    # Create input dataframe
+    input_data = pd.DataFrame({
+        "CIBIL_SCORE": [cibil_score],
+        "NO_OF_UNSECURED_LOAN": [no_of_unsecured_loan],
+        "NO_OF_TOTAL_TRADES": [no_of_total_trades],
+        "AVG_UTILIZATION_PERCENT": [avg_utilization_percent],
+        "30_DPD_CROSSED_TIMES_3M": [dpd_crossed_times]
+    })
 
-if st.button("Send"):
-    if user_input.strip() != "":
-        # Save user message
-        st.session_state.messages.append({"role": "user", "content": user_input})
+    # Predict probability
+    probability = model.predict_proba(input_data)[0][1]  # Probability of bounce
 
-        # Get response from OpenAI
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4.1-mini",  # lightweight model for Streamlit
-                messages=st.session_state.messages
-            )
-            bot_reply = response.choices[0].message.content
-
-            # Save bot reply
-            st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-        except Exception as e:
-            st.error(f"Error: {e}")
-
-# ==============================
-# Display chat history
-# ==============================
-st.subheader("💬 Chat History")
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.markdown(f"**You:** {msg['content']}")
+    # Determine risk level
+    if probability <= 0.30:
+        risk_flag = "Low Risk"
+    elif probability <= 0.70:
+        risk_flag = "Medium Risk"
     else:
-        st.markdown(f"**Bot:** {msg['content']}")
+        risk_flag = "High Risk"
 
-# ==============================
-# Optional: Clear chat button
-# ==============================
-if st.button("Clear Chat"):
-    st.session_state.messages = []
-    st.experimental_rerun()
+    # Display results
+    st.subheader("Prediction Results")
+    st.write(f"**Predicted Bounce Probability:** {probability:.2f}")
+    st.write(f"**Risk Category:** {risk_flag}")
+
+    # Progress bar visualization
+    st.progress(int(probability * 100))
